@@ -1,0 +1,122 @@
+service: loan-eligibility-engine
+
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: us-east-1
+  environment:
+    BUCKET_NAME: ${self:service}-uploads-${sls:stage}-clickpe-demo
+    DB_HOST: !GetAtt LoanDatabase.Endpoint.Address
+    DB_PORT: !GetAtt LoanDatabase.Endpoint.Port
+    DB_NAME: ${file(./config.json):DB_NAME}
+    DB_USER: ${file(./config.json):DB_USER}
+    DB_PASSWORD: ${file(./config.json):DB_PASSWORD}
+    N8N_WEBHOOK_URL: ${file(./config.json):N8N_WEBHOOK_URL}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+          Resource: "arn:aws:s3:::${self:provider.environment.BUCKET_NAME}/*"
+        # Add RDS access permissions if needed, usually handled by VPC/Security Groups
+        # Add SES permissions
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource: "*"
+
+functions:
+  getUploadUrl:
+    handler: handler.get_upload_url
+    events:
+      - http:
+          path: upload-url
+          method: get
+          cors: true
+
+  getStats:
+    handler: handler.get_stats
+    timeout: 30
+    memorySize: 256
+    events:
+      - http:
+          path: stats
+          method: get
+          cors: true
+
+  processUpload:
+    handler: handler.process_upload
+    timeout: 60
+    events:
+      - http:
+          path: process
+          method: post
+          cors: true
+
+  processCsv:
+    handler: handler.process_csv
+    timeout: 60
+    events:
+      - s3:
+          bucket: ${self:provider.environment.BUCKET_NAME}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .csv
+
+resources:
+  Resources:
+    # S3 Bucket is automatically created by the s3 event in the function, 
+    # but we can define it explicitly if we want specific config.
+    S3BucketLoaneligibilityengineuploadsdevclickpedemo:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.BUCKET_NAME}
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - "*"
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - HEAD
+              AllowedOrigins:
+                - "*"
+              MaxAge: 3000
+
+    # RDS Instance (Simplified for example)
+    LoanDatabase:
+      Type: AWS::RDS::DBInstance
+      DependsOn: ServerlessSecurityGroup
+      Properties:
+        Engine: postgres
+        DBInstanceClass: db.t3.micro
+        MasterUsername: ${self:provider.environment.DB_USER}
+        MasterUserPassword: ${self:provider.environment.DB_PASSWORD}
+        AllocatedStorage: 20
+        DBName: ${self:provider.environment.DB_NAME}
+        PubliclyAccessible: true
+        VPCSecurityGroups:
+          - !GetAtt ServerlessSecurityGroup.GroupId
+
+    ServerlessSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Allow all inbound traffic to RDS
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 5432
+            ToPort: 5432
+            CidrIp: 0.0.0.0/0
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: true

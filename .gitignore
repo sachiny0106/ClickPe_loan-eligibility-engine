@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Serverless
+.serverless/
+
+# IDE
+.vscode/
+.idea/
+
+# Sensitive files
+backend/config.json
+*.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build outputs
+dist/
+build/
+
+# n8n data (contains credentials)
+n8n_data/
+
+# Temporary files
+*.tmp
+*.temp

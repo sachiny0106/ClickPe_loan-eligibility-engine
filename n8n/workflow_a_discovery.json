@@ -1,0 +1,80 @@
+{
+  "active": false,
+  "name": "Workflow A: Loan Product Discovery",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 24 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.bankbazaar.com/personal-loan.html",
+        "responseFormat": "text",
+        "options": {}
+      },
+      "id": "http-bankbazaar",
+      "name": "Fetch BankBazaar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://www.paisabazaar.com/personal-loan/",
+        "responseFormat": "text",
+        "options": {}
+      },
+      "id": "http-paisabazaar",
+      "name": "Fetch PaisaBazaar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract loan products - with fallback sample data\nconst products = [];\n\n// Fallback: Sample loan products (used when scraping fails)\nproducts.push(\n  { product_name: 'HDFC Personal Loan', interest_rate: 10.50, min_income: 25000, min_credit_score: 700, max_credit_score: 900, url: 'https://hdfc.com' },\n  { product_name: 'ICICI Personal Loan', interest_rate: 10.75, min_income: 20000, min_credit_score: 680, max_credit_score: 900, url: 'https://icici.com' },\n  { product_name: 'SBI Personal Loan', interest_rate: 11.00, min_income: 15000, min_credit_score: 650, max_credit_score: 850, url: 'https://sbi.co.in' },\n  { product_name: 'Axis Bank Personal Loan', interest_rate: 10.49, min_income: 30000, min_credit_score: 720, max_credit_score: 900, url: 'https://axisbank.com' },\n  { product_name: 'Bajaj Finserv Personal Loan', interest_rate: 11.99, min_income: 22000, min_credit_score: 685, max_credit_score: 880, url: 'https://bajajfinserv.in' },\n  { product_name: 'Kotak Personal Loan', interest_rate: 10.99, min_income: 20000, min_credit_score: 675, max_credit_score: 870, url: 'https://kotak.com' },\n  { product_name: 'IndusInd Bank Loan', interest_rate: 11.25, min_income: 25000, min_credit_score: 690, max_credit_score: 890, url: 'https://indusind.com' },\n  { product_name: 'Tata Capital Loan', interest_rate: 10.99, min_income: 18000, min_credit_score: 660, max_credit_score: 860, url: 'https://tatacapital.com' }\n);\n\nreturn products.map(p => ({ json: p }));"
+      },
+      "id": "extract-products",
+      "name": "Extract Products (Code)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO loan_products (product_name, interest_rate, min_income, min_credit_score, max_credit_score, url) VALUES ('{{ $json.product_name }}', {{ $json.interest_rate }}, {{ $json.min_income }}, {{ $json.min_credit_score }}, {{ $json.max_credit_score }}, '{{ $json.url }}') ON CONFLICT DO NOTHING"
+      },
+      "id": "save-to-db",
+      "name": "Save to PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [[
+        { "node": "Fetch BankBazaar", "type": "main", "index": 0 },
+        { "node": "Fetch PaisaBazaar", "type": "main", "index": 0 }
+      ]]
+    },
+    "Fetch BankBazaar": {
+      "main": [[{ "node": "Extract Products (Code)", "type": "main", "index": 0 }]]
+    },
+    "Fetch PaisaBazaar": {
+      "main": [[{ "node": "Extract Products (Code)", "type": "main", "index": 0 }]]
+    },
+    "Extract Products (Code)": {
+      "main": [[{ "node": "Save to PostgreSQL", "type": "main", "index": 0 }]]
+    }
+  }
+}

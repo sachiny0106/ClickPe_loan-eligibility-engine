@@ -1,0 +1,81 @@
+{
+  "active": false,
+  "name": "Workflow C: User Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-notifications",
+        "responseMode": "lastNode"
+      },
+      "id": "webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT DISTINCT u.user_id, u.name, u.email, array_agg(lp.product_name) as products, array_agg(lp.interest_rate) as rates FROM matches m JOIN users u ON m.user_id = u.user_id JOIN loan_products lp ON m.product_id = lp.product_id WHERE m.matched_at > NOW() - INTERVAL '1 hour' GROUP BY u.user_id, u.name, u.email LIMIT 100"
+      },
+      "id": "get-matches",
+      "name": "Get Users with Matches",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format email content for each user\nconst results = [];\n\nfor (const item of $input.all()) {\n  const user = item.json;\n  const products = user.products || [];\n  const rates = user.rates || [];\n  \n  let productList = '';\n  for (let i = 0; i < products.length; i++) {\n    productList += `<tr><td style=\"padding:8px;border:1px solid #ddd\">${products[i]}</td><td style=\"padding:8px;border:1px solid #ddd\">${rates[i]}%</td></tr>`;\n  }\n  \n  const htmlBody = `\n    <html>\n    <body style=\"font-family:Arial,sans-serif;padding:20px\">\n      <h2 style=\"color:#2c5282\">🎉 Great News, ${user.name}!</h2>\n      <p>Based on your financial profile, you may be eligible for the following personal loan products:</p>\n      <table style=\"border-collapse:collapse;width:100%;margin:20px 0\">\n        <tr style=\"background:#2c5282;color:white\">\n          <th style=\"padding:12px;text-align:left\">Loan Product</th>\n          <th style=\"padding:12px;text-align:left\">Interest Rate</th>\n        </tr>\n        ${productList}\n      </table>\n      <p>Click below to apply:</p>\n      <a href=\"https://example.com/apply\" style=\"background:#2c5282;color:white;padding:12px 24px;text-decoration:none;border-radius:5px;display:inline-block\">Apply Now</a>\n      <hr style=\"margin:30px 0\">\n      <p style=\"color:#666;font-size:12px\">This is an automated message from Loan Eligibility Engine. Please do not reply.</p>\n    </body>\n    </html>\n  `;\n  \n  results.push({\n    json: {\n      to: user.email,\n      subject: `${user.name}, You're Pre-Approved for ${products.length} Loan(s)!`,\n      html: htmlBody\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "format-email",
+      "name": "Format Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@yourdomain.com",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "body": "={{ $json.html }}",
+        "options": {
+          "contentType": "html"
+        }
+      },
+      "id": "send-ses",
+      "name": "Send via AWS SES",
+      "type": "n8n-nodes-base.awsSes",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [{ "name": "status", "value": "notifications_sent" }]
+        }
+      },
+      "id": "response",
+      "name": "Return Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Get Users with Matches", "type": "main", "index": 0 }]]
+    },
+    "Get Users with Matches": {
+      "main": [[{ "node": "Format Email Content", "type": "main", "index": 0 }]]
+    },
+    "Format Email Content": {
+      "main": [[{ "node": "Send via AWS SES", "type": "main", "index": 0 }]]
+    },
+    "Send via AWS SES": {
+      "main": [[{ "node": "Return Success", "type": "main", "index": 0 }]]
+    }
+  }
+}
